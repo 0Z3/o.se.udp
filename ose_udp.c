@@ -85,10 +85,9 @@ static void ose_udp_sock(ose_bundle osevm)
     ose_pushInt32(vm_s, sock);
 }
 
-static void ose_udp_receive(ose_bundle osevm)
+static void ose_udp_recv(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
-    fprintf(stderr, "hi from %s!\n", __func__);
     uint16_t fd = (uint16_t)ose_popInt32(vm_s);
     struct sockaddr_in ca;
     socklen_t ca_len = sizeof(struct sockaddr_in);
@@ -105,7 +104,6 @@ static void ose_udp_receive(ose_bundle osevm)
 static void ose_udp_print(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
-    fprintf(stderr, "hi from %s!\n", __func__);
     char buf[8192];
     memset(buf, 0, 8192);
     int32_t n = ose_pprintBundle(vm_s, buf, 8192);
@@ -116,15 +114,26 @@ static void ose_udp_print(ose_bundle osevm)
 
 void ose_main(ose_bundle osevm)
 {
-    /* ose_pushContextMessage(osevm, 8192, "/ud"); */
-    /* ose_bundle vm_ud = ose_enter(osevm, "/ud"); */
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_pushBundle(vm_s);
     ose_pushMessage(vm_s, "/udp/sock", strlen("/udp/sock"), 1,
                     OSETT_ALIGNEDPTR, ose_udp_sock);
     ose_push(vm_s);
-    ose_pushMessage(vm_s, "/udp/receive", strlen("/udp/receive"), 1,
-                    OSETT_ALIGNEDPTR, ose_udp_receive);
+    ose_pushMessage(vm_s, "/udp/recv", strlen("/udp/recv"), 1,
+                    OSETT_ALIGNEDPTR, ose_udp_recv);
+    ose_push(vm_s);
+    {
+        ose_pushMessage(vm_s, "/udp/recv/exec",
+                        strlen("/udp/recv/exec"), 0);
+        ose_pushString(vm_s, "/!/udp/recv");
+        ose_pushString(vm_s, "/>/_e");
+        ose_pushString(vm_s, "/!/swap");
+        ose_pushString(vm_s, "/!/exec");
+        ose_pushString(vm_s, "/</_e");
+        ose_pushInt32(vm_s, 5);
+        ose_bundleFromTop(vm_s);
+    	ose_push(vm_s);
+    }
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/udp/print", strlen("/udp/print"), 1,
                     OSETT_ALIGNEDPTR, ose_udp_print);
