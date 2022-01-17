@@ -33,54 +33,119 @@
 #include "ose_vm.h"
 #include "ose_print.h"
 
-static void ose_udp_sock(ose_bundle osevm)
+static int getsockargs(ose_bundle bundle,
+                       char **addr,
+                       uint16_t *port)
 {
-    ose_bundle vm_s = OSEVM_STACK(osevm);
-    int n = ose_getBundleElemCount(vm_s);
+    int n = ose_getBundleElemCount(bundle);
     if(n < 2)
     {
         /* error */
-        return;
+        return 1;
     }
-    if(ose_peekType(vm_s) != OSETT_MESSAGE)
+    if(ose_peekType(bundle) != OSETT_MESSAGE)
     {
         /* error */
-        return;
+        return 1;
     }
-    if(ose_peekMessageArgType(vm_s) != OSETT_INT32)
+    if(ose_peekMessageArgType(bundle) != OSETT_INT32)
     {
         /* error */
-        return;
+        return 1;
     }
-    uint32_t port = ose_popInt32(vm_s);
-    if(port > 65535)
+    uint16_t p = ose_popInt32(bundle);
+    if(p > 65535)
     {
         /* error */
-        return;
+        return 1;
     }
-    if(ose_getBundleElemCount(vm_s) == n)
+    if(ose_getBundleElemCount(bundle) == n)
     {
-        ose_drop(vm_s);
+        ose_drop(bundle);
     }
-    if(ose_peekType(vm_s) != OSETT_MESSAGE)
-    {
-        /* error */
-        return;
-    }
-    if(ose_peekMessageArgType(vm_s) != OSETT_STRING)
+    if(ose_peekType(bundle) != OSETT_MESSAGE)
     {
         /* error */
-        return;
+        return 1;
     }
-    const char * const addr = ose_peekString(vm_s);
+    if(ose_peekMessageArgType(bundle) != OSETT_STRING)
+    {
+        /* error */
+        return 1;
+    }
+    char *a = ose_peekString(bundle);
+    if(!a)
+    {
+        return 1;
+    }
+    *port = p;
+    *addr = a;
+    return 0;
+}
 
-    struct sockaddr_in sa;
-    memset(&sa, 0, sizeof(struct sockaddr_in));
-    sa.sin_family = AF_INET;
-    sa.sin_addr.s_addr = inet_addr(addr);
-    sa.sin_port = htons((uint16_t)port);
+/* static struct sockaddr_in makesockaddr(const char * const addr, */
+/*                                        uint16_t port); */
+static int makesockaddr(ose_bundle bundle,
+                        struct sockaddr_in *sa)
+{
+    uint16_t port = 0;
+    char *addr = NULL;
+    int r = getsockargs(bundle, &addr, &port);
+    if(r)
+    {
+        ose_pushInt32(bundle, port);
+        return 1;
+    }
+    memset(sa, 0, sizeof(struct sockaddr_in));
+    sa->sin_family = AF_INET;
+    sa->sin_addr.s_addr = inet_addr(addr);
+    sa->sin_port = htons((uint16_t)port);
+    return 0;
+}
+
+static int32_t makesock(void)
+{
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    bind(sock, (struct sockaddr *)&sa, sizeof(struct sockaddr_in));
+    return sock;
+}
+
+static void ose_udp_sockCreate(ose_bundle osevm)
+{
+    ose_bundle vm_s = OSEVM_STACK(osevm);
+    int32_t sock = makesock();
+    ose_pushInt32(vm_s, sock);
+}
+
+static void ose_udp_sockBind(ose_bundle osevm)
+{
+    ose_bundle vm_s = OSEVM_STACK(osevm);
+    
+    struct sockaddr_in sa;
+    int r = makesockaddr(vm_s, &sa);
+    if(r)
+    {
+        return;
+    }
+    int32_t sock = makesock();
+    bind(sock, (struct sockaddr *)&sa,
+         sizeof(struct sockaddr_in));
+    ose_drop(vm_s);             /* address */
+    ose_pushInt32(vm_s, sock);
+}
+
+static void ose_udp_sockConnect(ose_bundle osevm)
+{
+    ose_bundle vm_s = OSEVM_STACK(osevm);
+    
+    struct sockaddr_in sa;
+    int r = makesockaddr(vm_s, &sa);
+    if(r)
+    {
+        return;
+    }
+    int32_t sock = makesock();
+    connect(sock, (struct sockaddr *)&sa,
+            sizeof(struct sockaddr_in));
     ose_drop(vm_s);             /* address */
     ose_pushInt32(vm_s, sock);
 }
@@ -109,6 +174,17 @@ static void ose_udp_recv(ose_bundle osevm)
     ose_pushMessage(vm_s, "/udp/sender/addr",
                     strlen("/udp/sender/addr"), 1,
                     OSETT_STRING, buf);
+}
+
+static void ose_udp_send(ose_bundle osevm)
+{
+    ose_bundle vm_s = OSEVM_STACK(osevm);
+    /* arg check */
+    int32_t sock = ose_popInt32(vm_s);
+    int32_t o = ose_getLastBundleElemOffset(vm_s);
+    const char * const b = ose_getBundlePtr(vm_s);
+    send(sock, b + o + 4, ose_readInt32(vm_s, o), 0);
+    ose_drop(vm_s);
 }
 
 static void ose_udp_sendto(ose_bundle osevm)
@@ -149,8 +225,14 @@ void ose_main(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
     ose_pushBundle(vm_s);
-    ose_pushMessage(vm_s, "/udp/sock", strlen("/udp/sock"), 1,
-                    OSETT_ALIGNEDPTR, ose_udp_sock);
+    ose_pushMessage(vm_s, "/udp/sock/create", strlen("/udp/sock/create"), 1,
+                    OSETT_ALIGNEDPTR, ose_udp_sockCreate);
+    ose_push(vm_s);
+    ose_pushMessage(vm_s, "/udp/sock/bind", strlen("/udp/sock/bind"), 1,
+                    OSETT_ALIGNEDPTR, ose_udp_sockBind);
+    ose_push(vm_s);
+    ose_pushMessage(vm_s, "/udp/sock/connect", strlen("/udp/sock/connect"), 1,
+                    OSETT_ALIGNEDPTR, ose_udp_sockConnect);
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/udp/recv", strlen("/udp/recv"), 1,
                     OSETT_ALIGNEDPTR, ose_udp_recv);
@@ -176,5 +258,8 @@ void ose_main(ose_bundle osevm)
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/udp/sendto", strlen("/udp/sendto"), 1,
                     OSETT_ALIGNEDPTR, ose_udp_sendto);
+    ose_push(vm_s);
+    ose_pushMessage(vm_s, "/udp/send", strlen("/udp/send"), 1,
+                    OSETT_ALIGNEDPTR, ose_udp_send);
     ose_push(vm_s);
 }
