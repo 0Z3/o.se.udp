@@ -209,18 +209,6 @@ static void ose_udp_sendto(ose_bundle osevm)
     ose_drop(vm_s);
 }
 
-static void ose_udp_print(ose_bundle osevm)
-{
-    ose_bundle vm_s = OSEVM_STACK(osevm);
-    char buf[8192];
-    memset(buf, 0, 8192);
-    int32_t n = ose_pprintBundle(vm_s, buf, 8192);
-    buf[n++] = '\n';
-    buf[n++] = '\r';
-    ose_pushString(vm_s, buf);
-    
-}
-
 void ose_main(ose_bundle osevm)
 {
     ose_bundle vm_s = OSEVM_STACK(osevm);
@@ -236,25 +224,6 @@ void ose_main(ose_bundle osevm)
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/udp/recv", strlen("/udp/recv"), 1,
                     OSETT_ALIGNEDPTR, ose_udp_recv);
-    ose_push(vm_s);
-    {
-        ose_pushMessage(vm_s, "/udp/recv/exec",
-                        strlen("/udp/recv/exec"), 0);
-        ose_pushString(vm_s, "/!/udp/recv");
-        ose_pushString(vm_s, "/>/_e");
-        ose_pushString(vm_s, "/!/swap");
-        ose_pushString(vm_s, "/s//udp/sender/addr");
-        ose_pushString(vm_s, "/!/assign");
-        ose_pushString(vm_s, "/!/swap");
-        ose_pushString(vm_s, "/!/exec");
-        ose_pushString(vm_s, "/</_e");
-        ose_pushInt32(vm_s, 8);
-        ose_bundleFromTop(vm_s);
-    	ose_push(vm_s);
-    }
-    ose_push(vm_s);
-    ose_pushMessage(vm_s, "/udp/print", strlen("/udp/print"), 1,
-                    OSETT_ALIGNEDPTR, ose_udp_print);
     ose_push(vm_s);
     ose_pushMessage(vm_s, "/udp/sendto", strlen("/udp/sendto"), 1,
                     OSETT_ALIGNEDPTR, ose_udp_sendto);
