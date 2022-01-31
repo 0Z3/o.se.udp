@@ -33,31 +33,35 @@
 #include "ose_vm.h"
 #include "ose_print.h"
 
-static int getsockargs(ose_bundle bundle,
-                       char **addr,
-                       uint16_t *port)
+static struct addr_port
+{
+    int ret;
+    const char * const addr;
+    uint16_t port;
+}
+getsockargs(ose_bundle bundle)
 {
     int n = ose_getBundleElemCount(bundle);
     if(n < 2)
     {
         /* error */
-        return 1;
+        return (struct addr_port){1, NULL, 0};
     }
     if(ose_peekType(bundle) != OSETT_MESSAGE)
     {
         /* error */
-        return 1;
+        return (struct addr_port){1, NULL, 0};
     }
     if(ose_peekMessageArgType(bundle) != OSETT_INT32)
     {
         /* error */
-        return 1;
+        return (struct addr_port){1, NULL, 0};
     }
     uint16_t p = ose_popInt32(bundle);
     if(p > 65535)
     {
         /* error */
-        return 1;
+        return (struct addr_port){1, NULL, 0};
     }
     if(ose_getBundleElemCount(bundle) == n)
     {
@@ -66,40 +70,37 @@ static int getsockargs(ose_bundle bundle,
     if(ose_peekType(bundle) != OSETT_MESSAGE)
     {
         /* error */
-        return 1;
+        return (struct addr_port){1, NULL, 0};
     }
     if(ose_peekMessageArgType(bundle) != OSETT_STRING)
     {
         /* error */
-        return 1;
+        return (struct addr_port){1, NULL, 0};
     }
-    char *a = ose_peekString(bundle);
+    const char * const a = ose_peekString(bundle);
     if(!a)
     {
-        return 1;
+        return (struct addr_port){1, NULL, 0};
     }
-    *port = p;
-    *addr = a;
-    return 0;
+    return (struct addr_port){0, a, p};
 }
 
-/* static struct sockaddr_in makesockaddr(const char * const addr, */
-/*                                        uint16_t port); */
 static int makesockaddr(ose_bundle bundle,
                         struct sockaddr_in *sa)
 {
-    uint16_t port = 0;
-    char *addr = NULL;
-    int r = getsockargs(bundle, &addr, &port);
-    if(r)
+    /* uint16_t port = 0; */
+    /* char *addr = NULL; */
+    /* int r = getsockargs(bundle, &addr, &port); */
+    struct addr_port ap = getsockargs(bundle);
+    if(ap.ret)
     {
-        ose_pushInt32(bundle, port);
+        ose_pushInt32(bundle, ap.port);
         return 1;
     }
     memset(sa, 0, sizeof(struct sockaddr_in));
     sa->sin_family = AF_INET;
-    sa->sin_addr.s_addr = inet_addr(addr);
-    sa->sin_port = htons((uint16_t)port);
+    sa->sin_addr.s_addr = inet_addr(ap.addr);
+    sa->sin_port = htons((uint16_t)ap.port);
     return 0;
 }
 
